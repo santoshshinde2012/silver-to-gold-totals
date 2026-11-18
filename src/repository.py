@@ -10,7 +10,7 @@ import pyarrow as pa
 from deltalake import CommitProperties, DeltaTable, write_deltalake
 
 from .models import GOLD_COLUMNS, GROUP, ORDER_COLUMNS, OrderChange
-from .totals import tidy
+from .totals import groups_of, tidy
 
 ORDERS = pa.schema(
     [
@@ -33,12 +33,13 @@ TOTALS = pa.schema(
 )
 
 
-def _sql(value: object) -> str:
-    return f"'{value}'" if isinstance(value, str) else str(value)
+def _sql_string(value: str) -> str:
+    """Quote a SQL string literal, including embedded apostrophes."""
+    return "'" + value.replace("'", "''") + "'"
 
 
 def group_predicate(groups: frozenset[tuple[str, str]]) -> str:
-    parts = [f"(business_date = '{d}' AND region = '{r}')" for d, r in sorted(groups)]
+    parts = [f"(business_date = {_sql_string(d)} AND region = {_sql_string(r)})" for d, r in sorted(groups)]
     return " OR ".join(parts) if parts else "false"
 
 
@@ -55,9 +56,21 @@ class SilverOrders:
         return self.version()
 
     def change(self, c: OrderChange) -> int:
-        DeltaTable(self.path).update(
-            predicate=f"order_id = {c.order_id}", updates={k: _sql(v) for k, v in c.updates.items()}
-        )
+        if type(c.order_id) is not int:
+            raise ValueError("order_id must be an integer")
+        for column, value in c.updates.items():
+            if column not in ORDER_COLUMNS or column == "order_id":
+                raise ValueError(f"Cannot update order column: {column}")
+            expected = int if column == "amount" else str
+            if type(value) is not expected:
+                raise ValueError(f"{column} must be {expected.__name__}")
+        if c.updates:
+            # delta-rs 1.6.6's new_values also formats strings without escaping.
+            # Validate columns/types above and build literals explicitly instead.
+            updates = {
+                key: _sql_string(value) if isinstance(value, str) else str(value) for key, value in c.updates.items()
+            }
+            DeltaTable(self.path).update(predicate=f"order_id = {c.order_id}", updates=updates)
         return self.version()
 
     def version(self) -> int:
@@ -103,6 +116,8 @@ class GoldTotals:
 
     def replace_groups(self, groups: frozenset[tuple[str, str]], rows: pd.DataFrame, silver_version: int) -> None:
         """Replace every row in `groups` in one commit. A group missing from `rows` is removed."""
+        if not groups_of(rows).issubset(groups):
+            raise ValueError("Replacement rows must belong to the requested groups")
         write_deltalake(
             self.path,
             self._arrow(rows),
@@ -119,6 +134,8 @@ class GoldTotals:
 
     @staticmethod
     def _arrow(rows: pd.DataFrame) -> pa.Table:
+        if rows.duplicated(GROUP).any():
+            raise ValueError("Gold must contain at most one row per business date and region")
         return pa.Table.from_pandas(rows[GOLD_COLUMNS].reset_index(drop=True), schema=TOTALS, preserve_index=False)
 
     @staticmethod

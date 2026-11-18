@@ -1,0 +1,41 @@
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Silver → Gold totals — actual Delta results</title><style>
+* { box-sizing:border-box; } body { margin:0;background:#f1f5f8;color:#183342;
+font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif; }
+main { max-width:1480px;padding:36px 42px;margin:auto; }
+.eyebrow { color:#487183;font-size:11px;font-weight:750;letter-spacing:1.7px;text-transform:uppercase; }
+header { display:flex;justify-content:space-between;align-items:center;gap:20px; }
+h1 { margin:9px 0;font-size:36px;letter-spacing:-1px; }
+header p { color:#58717f;font-size:13px;margin:0;line-height:1.6; }
+.badge { background:#deeee9;color:#08674f;border:1px solid #b9dcd0;padding:10px 14px;
+font-size:11px;font-weight:750;border-radius:6px;white-space:nowrap; }
+.metrics { display:grid;grid-template-columns:repeat(4,1fr);gap:15px;margin:25px 0 20px; }
+.metric,.panel { background:white;border:1px solid #dce5eb;border-radius:9px;overflow:hidden; }
+.metric { padding:17px 21px;border-top:3px solid #278e79; }
+.metric strong { display:block;font-size:31px;color:#164b55; }
+.metric span { display:block;font-size:13px;font-weight:650;margin:6px 0; }
+.metric small { color:#667e8c;font-size:11px; }
+.panel { margin-bottom:20px; } .panel-title { padding:16px 20px;border-bottom:1px solid #e8edf0; }
+h2 { font-size:17px;margin:0 0 5px;letter-spacing:-.2px; } .panel-title p { font-size:11px;color:#637c8b;margin:0; }
+.tables { display:grid;grid-template-columns:1.15fr 1fr;gap:20px;align-items:start; }
+.scroll { overflow:auto; } table { width:100%;border-collapse:collapse;text-align:left;font-size:12px; }
+th { padding:11px 18px;background:#f8fafb;color:#5b7382;font-size:9px;text-transform:uppercase;letter-spacing:.6px; }
+td { padding:10px 18px;border-top:1px solid #edf1f3;font-variant-numeric:tabular-nums;white-space:nowrap; }
+.ok { color:#087456; } .warn { color:#a76320; } b.ok,b.warn { font-size:10px;letter-spacing:.5px; }
+details { font-size:12px; } summary { padding:14px 20px;cursor:pointer;font-weight:650; }
+.note { font-size:10px;color:#637c8b;line-height:1.7; } .note p { margin:5px 0; }
+code { font-family:ui-monospace,monospace; } a { color:#236b8a; }
+@media(max-width:900px) { main { padding:22px; } .metrics { grid-template-columns:1fr 1fr; }
+.tables { grid-template-columns:1fr; } h1 { font-size:29px; } header { display:block; }
+.badge { display:inline-block;margin-top:14px; } }
+</style></head><body><main><header><div><div class="eyebrow">Local Delta Lake / Result evidence</div>
+<h1>Silver → Gold totals</h1><p>Actual persisted rows and repair outcomes, reconciled against the Silver version for each demo stage.</p></div><span class="badge">ACTUAL TABLE SNAPSHOTS</span></header>
+<section class="metrics"><div class="metric"><strong>8</strong><span>Silver orders</span><small>Current snapshot · v4</small></div><div class="metric"><strong>365</strong><span>Current accepted amount</span><small>Full rebuild of latest Silver</small></div><div class="metric"><strong>4</strong><span>Repair strategies</span><small>Compared with Silver v2</small></div><div class="metric"><strong>2</strong><span>Release replays</span><small>Compared with Silver v3</small></div></section><article class="panel"><div class="panel-title"><h2>Reconciliation · each stage has its own baseline</h2><p>Three repair strategies and the unguarded replay intentionally demonstrate incorrect results.</p></div><table><thead><tr><th>Persisted Gold variant</th><th>Silver reference</th><th>Result</th><th>Differing groups</th></tr></thead><tbody><tr><td>New groups · upsert</td><td>v2</td><td><b class="warn">DIFFERS</b></td><td>2</td></tr><tr><td>Old + new groups · upsert</td><td>v2</td><td><b class="warn">DIFFERS</b></td><td>1</td></tr><tr><td>Old + new groups · replace</td><td>v2</td><td><b class="ok">MATCH</b></td><td>0</td></tr><tr><td>Changed-row arithmetic</td><td>v2</td><td><b class="warn">DIFFERS</b></td><td>2</td></tr><tr><td>Replay · guard disabled</td><td>v3</td><td><b class="warn">DIFFERS</b></td><td>1</td></tr><tr><td>Replay · guard enabled</td><td>v3</td><td><b class="ok">MATCH</b></td><td>0</td></tr></tbody></table></article><section class="tables"><article class="panel"><div class="panel-title"><h2>Silver · latest orders</h2><p>Delta v4 · 8 rows · silver_orders</p></div><div class="scroll"><table><thead><tr><th>order id</th><th>business date</th><th>region</th><th>customer</th><th>amount</th><th>status</th></tr></thead><tbody><tr><td>1</td><td>2026-10-30</td><td>West</td><td>A</td><td>100</td><td>accepted</td></tr><tr><td>2</td><td>2026-10-30</td><td>West</td><td>B</td><td>45</td><td>accepted</td></tr><tr><td>3</td><td>2026-11-03</td><td>West</td><td>A</td><td>35</td><td>accepted</td></tr><tr><td>4</td><td>2026-11-03</td><td>West</td><td>C</td><td>60</td><td>accepted</td></tr><tr><td>5</td><td>2026-11-03</td><td>East</td><td>B</td><td>70</td><td>accepted</td></tr><tr><td>6</td><td>2026-11-04</td><td>East</td><td>D</td><td>30</td><td>accepted</td></tr><tr><td>7</td><td>2026-11-04</td><td>East</td><td>C</td><td>25</td><td>accepted</td></tr><tr><td>8</td><td>2026-11-05</td><td>South</td><td>E</td><td>90</td><td>cancelled</td></tr></tbody></table></div></article><article class="panel"><div class="panel-title"><h2>Gold · replace affected groups</h2><p>Delta v2 · 4 rows · gold_old_and_new_groups_replace · repair stage: Silver v2</p></div><div class="scroll"><table><thead><tr><th>business date</th><th>region</th><th>net amount</th><th>order count</th><th>customers</th></tr></thead><tbody><tr><td>2026-10-30</td><td>West</td><td>150</td><td>2</td><td>2</td></tr><tr><td>2026-11-03</td><td>East</td><td>70</td><td>1</td><td>1</td></tr><tr><td>2026-11-03</td><td>West</td><td>100</td><td>2</td><td>2</td></tr><tr><td>2026-11-04</td><td>East</td><td>55</td><td>2</td><td>2</td></tr></tbody></table></div></article></section>
+
+<details class="panel"><summary>Snapshot inventory · all 7 tables</summary><div class="scroll"><table><thead><tr><th>table</th><th>delta version</th><th>rows</th><th>recorded silver version</th></tr></thead><tbody><tr><td>gold_add_and_subtract_changed_rows</td><td>2</td><td>5</td><td>2</td></tr><tr><td>gold_new_groups_upsert</td><td>1</td><td>5</td><td>0</td></tr><tr><td>gold_old_and_new_groups_replace</td><td>2</td><td>4</td><td>2</td></tr><tr><td>gold_old_and_new_groups_upsert</td><td>1</td><td>5</td><td>0</td></tr><tr><td>gold_race_guard_false</td><td>2</td><td>4</td><td>1</td></tr><tr><td>gold_race_guard_true</td><td>1</td><td>4</td><td>3</td></tr><tr><td>silver_orders</td><td>4</td><td>8</td><td>None</td></tr></tbody></table></div></details>
+<footer class="note"><p>Gold variants are retained at different demo stages; they are not all expected to match the latest Silver. An upsert does not update the source-version metadata in this teaching example. Full rows and check differences: <a href="tables.json">tables.json</a>.</p>
+<p>Source: <code>/Users/santosh/Documents/workspace/silver-to-gold-totals/lake</code> · Exported 2026-11-18T12:27:36+00:00.</p>
+<p>python 3.12.6 · deltalake 1.6.6 · pandas 3.1.1 · pyarrow 26.0.1. Read-only export; table versions are captured individually,
+without a cross-table transaction.
+Stop writers before refreshing evidence. Demo data is synthetic.</p></footer></main></body></html>

@@ -5,7 +5,7 @@ from __future__ import annotations
 import pandas as pd
 
 from .models import GOLD_COLUMNS, GROUP
-from .protocols import OrderTable, TotalsTable
+from .protocols import ArithmeticStore, GroupReplacement, OrderReader, TotalsUpsert
 from .totals import full_rebuild, groups_of, new_groups, old_and_new_groups, restrict, tidy
 
 
@@ -14,7 +14,7 @@ class NewGroupsUpsert:
 
     name = "new groups, upsert"
 
-    def apply(self, silver: OrderTable, gold: TotalsTable, start: int, end: int) -> None:
+    def apply(self, silver: OrderReader, gold: TotalsUpsert, start: int, end: int) -> None:
         groups = new_groups(silver.changes(start, end))
         gold.upsert(restrict(full_rebuild(silver.read(end)), groups))
 
@@ -24,7 +24,7 @@ class OldAndNewUpsert:
 
     name = "old and new groups, upsert"
 
-    def apply(self, silver: OrderTable, gold: TotalsTable, start: int, end: int) -> None:
+    def apply(self, silver: OrderReader, gold: TotalsUpsert, start: int, end: int) -> None:
         groups = old_and_new_groups(silver.changes(start, end))
         gold.upsert(restrict(full_rebuild(silver.read(end)), groups))
 
@@ -34,7 +34,7 @@ class ReplaceAffectedGroups:
 
     name = "old and new groups, replace"
 
-    def apply(self, silver: OrderTable, gold: TotalsTable, start: int, end: int) -> None:
+    def apply(self, silver: OrderReader, gold: GroupReplacement, start: int, end: int) -> None:
         groups = old_and_new_groups(silver.changes(start, end))
         gold.replace_groups(groups, restrict(full_rebuild(silver.read(end)), groups), end)
 
@@ -44,7 +44,7 @@ class ChangedRowArithmetic:
 
     name = "add and subtract changed rows"
 
-    def apply(self, silver: OrderTable, gold: TotalsTable, start: int, end: int) -> None:
+    def apply(self, silver: OrderReader, gold: ArithmeticStore, start: int, end: int) -> None:
         feed = silver.changes(start, end)
         feed = feed[feed["status"] == "accepted"]
         sign = feed["_change_type"].map({"insert": 1, "update_postimage": 1, "update_preimage": -1, "delete": -1})

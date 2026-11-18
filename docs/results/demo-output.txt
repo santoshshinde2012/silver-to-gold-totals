@@ -1,0 +1,18 @@
+....................................                                     [100%]
+36 passed in 2.08s
+deltalake 1.6.6 on local disk; not a Databricks runtime
+0. Gold from Silver v0: 5 groups; 3 Nov West = (125, 3, 2) (amount, orders, customers)
+1. Order 7 change rows: [('update_preimage', '2026-11-03', 'West'), ('update_postimage', '2026-11-04', 'East')]
+   Groups from new rows only: [('2026-11-04', 'East')]
+   Groups from old and new rows: [('2026-11-03', 'West'), ('2026-11-04', 'East')]
+2. Differences from a full rebuild (group, Gold, full rebuild):
+   new groups, upsert: [('2026-11-03', 'West', (125, 3, 2), (100, 2, 2)), ('2026-11-05', 'South', (90, 1, 1), None)]
+   old and new groups, upsert: [('2026-11-05', 'South', (90, 1, 1), None)]
+   old and new groups, replace: none
+   add and subtract changed rows: [('2026-11-03', 'West', (100, 2, 1), (100, 2, 2)), ('2026-11-05', 'South', (0, 0, 0), None)]
+3. Race, guard=false: ['released', 'released']; 3 Nov West = (100, 2, 2); matches full rebuild: False
+3. Race, guard=true: ['released', 'rejected']; 3 Nov West = (95, 2, 2); matches full rebuild: True
+   3 Nov West in a full rebuild = (95, 2, 2)
+4. October approved 150, now 145. Silver total 365.
+   Drop late rows: report total 370
+   Keep October, book an adjustment [{'booked_in': '2026-11', 'for_month': '2026-10', 'amount': -5}]: report total 365

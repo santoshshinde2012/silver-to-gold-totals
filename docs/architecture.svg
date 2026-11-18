@@ -1,0 +1,98 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1440" height="900" viewBox="0 0 1440 900" role="img" aria-labelledby="title description">
+  <title id="title">Silver to Gold Totals: data flow and dependency boundaries</title>
+  <desc id="description">A versioned Silver snapshot supplies accepted orders. The change feed supplies old and new group keys. Their union defines the work set. The same aggregation used for a full rebuild recomputes those groups, and predicate overwrite replaces them in Gold, removing empty groups. Gold is compared with a full rebuild at the same Silver version. In code, the scenario constructs Delta adapters; repair strategies and release logic depend on narrow protocols implemented by those adapters. The inspector reads existing Delta snapshots without running the demo.</desc>
+  <defs>
+    <marker id="arrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto"><path d="M0 1 L9 5 L0 9 Z" fill="#3863b7"/></marker>
+    <marker id="port-arrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto"><path d="M1 1 L9 5 L1 9" fill="none" stroke="#66758b" stroke-width="1.5"/></marker>
+    <style>
+      text { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Arial, sans-serif; fill: #162841; }
+      .eyebrow { font-size: 13px; font-weight: 700; letter-spacing: 1.7px; fill: #5b6b80; }
+      .title { font-size: 37px; font-weight: 700; letter-spacing: -.8px; }
+      .subtitle { font-size: 20px; fill: #52627a; }
+      .heading { font-size: 23px; font-weight: 700; }
+      .body { font-size: 18px; fill: #435570; }
+      .small { font-size: 15px; fill: #52627a; }
+      .code { font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; font-size: 16px; }
+      .flow { fill: none; stroke: #3863b7; stroke-width: 2.5; marker-end: url(#arrow); }
+      .dependency { fill: none; stroke: #66758b; stroke-width: 2; stroke-dasharray: 6 5; marker-end: url(#port-arrow); }
+    </style>
+  </defs>
+  <rect width="1440" height="900" rx="20" fill="#f5f7fb"/>
+  <rect width="1440" height="8" rx="4" fill="#3863b7"/>
+  <text x="48" y="52" class="eyebrow">SILVER TO GOLD TOTALS / LOCAL DELTA LAKE</text>
+  <text x="48" y="104" class="title">Repair the whole affected group</text>
+  <text x="48" y="140" class="subtitle">Read one Silver version. Include old and new keys. Replace the complete work set.</text>
+
+  <rect x="48" y="172" width="1344" height="67" rx="10" fill="#e8eef9"/>
+  <text x="68" y="198" class="eyebrow" style="font-size:11px;letter-spacing:1px">THE CHANGE</text>
+  <text x="68" y="222" class="code" style="font-weight:700">Order 7 · amount 25</text>
+  <text x="405" y="212" class="body">03 Nov / West</text>
+  <path d="M585 207 H675" class="flow"/>
+  <text x="706" y="212" class="body">04 Nov / East</text>
+  <text x="1015" y="212" class="small">Both totals must change.</text>
+
+  <text x="48" y="279" class="eyebrow">01 / REPAIR FLOW</text>
+  <g>
+    <rect x="48" y="302" width="282" height="196" rx="12" fill="#fff" stroke="#cbd5e3"/>
+    <text x="70" y="334" class="eyebrow" style="fill:#3863b7">READ</text>
+    <text x="70" y="370" class="heading">Silver snapshot</text>
+    <text x="70" y="400" class="code">silver_orders @ end</text>
+    <text x="70" y="435" class="body">One current row per order</text>
+    <text x="70" y="463" class="body">Accepted orders contribute</text>
+    <text x="70" y="487" class="small">Version pinned for the entire repair</text>
+  </g>
+  <g>
+    <rect x="402" y="302" width="282" height="196" rx="12" fill="#fff" stroke="#cbd5e3"/>
+    <text x="424" y="334" class="eyebrow" style="fill:#3863b7">IDENTIFY</text>
+    <text x="424" y="370" class="heading">Change data feed</text>
+    <text x="424" y="400" class="code">start … end</text>
+    <text x="424" y="435" class="body">Pre-image → old group</text>
+    <text x="424" y="463" class="body">Post-image → new group</text>
+    <text x="424" y="487" class="small">Union of keys defines the work set</text>
+  </g>
+  <g>
+    <rect x="756" y="302" width="282" height="196" rx="12" fill="#edf3ff" stroke="#9fb5df"/>
+    <text x="778" y="334" class="eyebrow" style="fill:#3863b7">RECOMPUTE</text>
+    <text x="778" y="370" class="heading">Complete groups</text>
+    <text x="778" y="400" class="code">full_rebuild → restrict</text>
+    <text x="778" y="435" class="body">Amount · order count</text>
+    <text x="778" y="463" class="body">Distinct customer count</text>
+    <text x="778" y="487" class="small">Same query as the reference rebuild</text>
+  </g>
+  <g>
+    <rect x="1110" y="302" width="282" height="196" rx="12" fill="#fff8df" stroke="#d8c481"/>
+    <text x="1132" y="334" class="eyebrow" style="fill:#8c6e19">REPLACE</text>
+    <text x="1132" y="370" class="heading">Gold Delta table</text>
+    <text x="1132" y="400" class="code">predicate overwrite</text>
+    <text x="1132" y="435" class="body">Replace affected groups</text>
+    <text x="1132" y="463" class="body">Remove groups now empty</text>
+    <text x="1132" y="487" class="small">Commit records the Silver version</text>
+  </g>
+  <path d="M330 403 H396" class="flow"/>
+  <path d="M684 403 H750" class="flow"/>
+  <path d="M1038 403 H1104" class="flow"/>
+  <text x="48" y="533" class="small">Local implementation materializes the Silver snapshot in pandas; the work set scopes the Gold write.</text>
+  <rect x="48" y="551" width="1344" height="51" rx="8" fill="#e6f2ed"/>
+  <text x="68" y="584" class="body" style="fill:#225a46;font-weight:600">Verify Gold against a full rebuild at the same Silver version — including groups that should disappear.</text>
+
+  <text x="48" y="646" class="eyebrow">02 / CODE BOUNDARIES</text>
+  <path d="M1117 640 H1150" class="dependency"/>
+  <text x="1162" y="645" class="small">depends on / implements</text>
+  <rect x="48" y="667" width="390" height="125" rx="10" fill="#fff" stroke="#cbd5e3"/>
+  <text x="70" y="699" class="heading">Repair &amp; release logic</text>
+  <text x="70" y="730" class="code">repairs.py · pipeline.py</text>
+  <text x="70" y="762" class="body">Uses totals.py and storage contracts</text>
+  <rect x="525" y="667" width="390" height="125" rx="10" fill="#e8eef9" stroke="#b5c7e6"/>
+  <text x="547" y="699" class="heading">Narrow storage contracts</text>
+  <text x="547" y="730" class="code">protocols.py</text>
+  <text x="547" y="762" class="body">Read · upsert · replace · history</text>
+  <rect x="1002" y="667" width="390" height="125" rx="10" fill="#fff" stroke="#cbd5e3"/>
+  <text x="1024" y="699" class="heading">Delta adapters</text>
+  <text x="1024" y="730" class="code">repository.py</text>
+  <text x="1024" y="762" class="body">SilverOrders · GoldTotals</text>
+  <path d="M438 729 H519" class="dependency"/>
+  <path d="M1002 729 H921" class="dependency"/>
+  <line x1="48" y1="818" x2="1392" y2="818" stroke="#d6deea"/>
+  <text x="48" y="850" class="small">scenario.py wires adapters and runs comparisons · totals_demo.py prints results · inspection.py reads existing tables</text>
+  <text x="48" y="877" class="small">Stale-release replay and closed-month adjustments are separate scenarios; the release guard is a non-atomic demonstration.</text>
+</svg>

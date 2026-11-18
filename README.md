@@ -1,41 +1,39 @@
 # Silver to Gold Totals
 
-**Find and repair the Gold totals that one Silver change affects, checked against a full rebuild, with an executable local Delta Lake example.**
+**Repair the Gold aggregates affected by a Silver change, and prove the result against a full rebuild.**
 
-Companion code for **One Silver Row Changed. Which Gold Totals Must Change?** An order moves to another day and region. The new day's total goes up, and the old day's total stays where it was, so the report counts the order twice. The project shows why the old group is the one a repair forgets, compares four ways of repairing Gold, and shows how an older repair can overwrite a newer one.
+An executable companion to **One Silver Row Changed. Which Gold Totals Must Change?** This project demonstrates why an order moving between dates or regions requires repairing both groups, why an upsert leaves obsolete groups behind, and why distinct customer counts cannot be repaired by simple subtraction.
 
-Silver holds the latest state of each order; Gold holds daily totals derived from it. The **grain** of a table is what one row stands for: here, one Gold row is one business date and one region. A **change data feed (CDF)** records each Silver update as two rows: a **pre-image** with the old values and a **post-image** with the new ones.
+Built with Python, pandas, PyArrow, and open-source Delta Lake (`deltalake` / delta-rs). Silver and every Gold variant are real Delta tables on local disk. The order data is synthetic; the demo runs without Spark or a Databricks workspace.
 
-The example uses synthetic order data, Python, pandas, and the open-source `deltalake` library (delta-rs). It runs locally without Spark or a Databricks workspace.
+## Verified results
 
-## Choose a repair
+![Actual Delta table results: version-specific reconciliation, latest Silver rows, and Gold rows produced by replacing affected groups](docs/results/snapshot.png)
 
-| Repair | Appropriate when | Local implementation |
-| --- | --- | --- |
-| **Materialized view** | Gold's totals are current truth and the engine can keep the query up to date. | Not run. It is a Databricks feature; the article describes its incremental refresh. |
-| **Replace old and new groups** | Gold must be a table you write. | [`ReplaceAffectedGroups`](src/repairs.py) takes the groups named by the pre-image and the post-image, recomputes them in full, and replaces exactly those groups in one commit. |
-| **Refuse stale releases** | Repairs can overlap or be retried. | [`publish(guard=True)`](src/pipeline.py) records the Silver version each release read and refuses a release older than the last one. |
-| **Adjust closed periods** | A month is approved and must stay fixed. | [`adjustments`](src/pipeline.py) books the difference in a later month instead of restating the closed one. |
+*Browser capture of the [generated result report](docs/results/index.html). All displayed values come from Delta snapshot reads. The report distinguishes the repair stage from the later release and closed-month stages.*
 
-Three more repairs are deliberate counterexamples: [`NewGroupsUpsert`](src/repairs.py) misses the old group, [`OldAndNewUpsert`](src/repairs.py) cannot remove a group that became empty, and [`ChangedRowArithmetic`](src/repairs.py) gets distinct counts wrong.
+The correct replacement strategy matches a full rebuild at **Silver v2**. With the release guard enabled, the newer repair matches **Silver v3** and the stale retry is rejected. The final **Silver v4** totals **365** after the late October correction.
 
-**Implementation scope:** Silver and every Gold variant are real Delta tables on local disk. Group replacement uses the `deltalake` library's predicate overwrite, which plays the role of Databricks `REPLACE WHERE`; upserts use its `merge`. The race between two repairs is a sequential replay of their releases, not a concurrent run. The closed-month example computes month totals in memory and does not persist an adjustments table. No Databricks materialized view, `REPLACE WHERE`, or `MERGE` is executed.
+| Evidence | Contents |
+| --- | --- |
+| [Result screenshot](docs/results/snapshot.png) | Reconciliation outcomes and actual Silver and Gold rows. |
+| [HTML report](docs/results/index.html) | Offline report with table versions, inventory, and provenance. Open locally; GitHub displays HTML source. |
+| [Table export](docs/results/tables.json) | All persisted table rows, captured versions, reference rebuilds, differences, and runtime versions. |
+| [Demo transcript](docs/results/demo-output.txt) | Test results and the complete executable scenario output. |
 
 ## Quick start
 
-Requirements: **Python 3.10+**, `pip`, and Bash for the helper script. The first setup requires access to the Python package index. `make` is optional.
-
-Run from the repository root:
+Requirements: **Python 3.10+**, `pip`, and Bash for the helper script. The initial dependency installation needs access to the Python package index.
 
 ```bash
 ./run_demo.sh
 ```
 
-The script creates `.venv` if needed, installs `requirements.txt`, runs the tests, and prints the scenario results. `deltalake` is pinned to `1.6.6`; the other dependencies have minimum versions.
+The script creates `.venv`, installs dependencies, runs the tests, and prints the scenario results. `deltalake` is pinned to **1.6.6**; other dependencies specify minimum versions.
 
-The demo deletes and recreates the repository's `lake/` directory on each run. Keep that directory reserved for generated demo data. The Python helper `run(lake)` likewise removes the directory passed to it.
+**Each demo run deletes and recreates this repository's `lake/` directory.** Reserve it for generated demo data. `scenario.run(root)` also recreates its supplied directory; tests use temporary lakes.
 
-To run the same steps manually:
+Manual execution:
 
 ```bash
 python3 -m venv .venv
@@ -44,113 +42,174 @@ python3 -m venv .venv
 .venv/bin/python -m src.totals_demo
 ```
 
-### Development commands
+## Architecture
 
-| Command | Action |
-| --- | --- |
-| `make` | Run lint, formatting checks, type checks, tests, and the demo. |
-| `make setup` | Create `.venv` and install runtime and development tools. |
-| `make test` | Run `pytest`. |
-| `make lint` | Run `ruff check` and `ruff format --check`. |
-| `make types` | Run `mypy src`. |
-| `make demo` | Print the demo results. |
-| `make clean` | Remove `.venv`, `lake/`, tool caches, and Python bytecode caches. |
+![Silver-to-Gold architecture: pinned Silver reads, CDF old and new keys, complete-group recomputation, scoped Delta replacement, and narrow storage interfaces](docs/architecture.svg)
 
-The check and demo targets run dependency setup first. Once dependencies are installed, invoke tools directly with `.venv/bin/python -m pytest`, `.venv/bin/python -m ruff check .`, `.venv/bin/python -m ruff format --check .`, or `.venv/bin/python -m mypy src`.
+The Gold grain is **one row per business date and region**. Only accepted orders contribute:
 
-## What the example demonstrates
-
-Silver starts with eight accepted orders, and Gold has five daily totals. Order **7** (customer C, amount 25) moves from **3 Nov West** to **4 Nov East**. Customer C still has order 4 in 3 Nov West. Order **8**, the only order in **5 Nov South**, is then cancelled. Each value below is (amount, orders, distinct customers).
-
-| Step | Expected result |
-| --- | --- |
-| Read the CDF for order 7's move | The pre-image names 3 Nov West and the post-image names 4 Nov East. New rows alone name only 4 Nov East. |
-| Recompute only the groups the new rows name, then upsert | 3 Nov West keeps **(125, 3, 2)**; a full rebuild says **(100, 2, 2)**. 5 Nov South keeps 90. |
-| Recompute old and new groups, then upsert | 3 Nov West is right, but the upsert cannot remove 5 Nov South, which now has no orders. |
-| Recompute old and new groups, then replace them | Gold matches the full rebuild. The empty group disappears. |
-| Add and subtract the changed rows | Amount and order count are right, but 3 Nov West has **1** distinct customer instead of **2**, and 5 Nov South is left as a row of zeros. |
-| Release a repair built from Silver version 3, then retry one built from version 1 | Without the guard, 3 Nov West goes back from **95** to **100**. With the guard, the older release is refused. |
-| Close October at 150, then correct an October order by −5 in November | Dropping the late row leaves the report at **370** while Silver says **365**. Booking a November adjustment keeps October at 150 and the report at 365. |
-
-The executable prints all outcomes. [`test_article_claims.py`](tests/test_article_claims.py) checks the reported values against real temporary Delta tables.
-
-## Example output
-
-The following successful `./run_demo.sh` run passed all **13 tests** and printed the results below. Test timing varies by machine; package installation and update notices are omitted.
-
-```text
-$ ./run_demo.sh
-{out}
+```sql
+SELECT business_date, region,
+       SUM(amount) AS net_amount,
+       COUNT(*) AS order_count,
+       COUNT(DISTINCT customer) AS customers
+FROM silver_orders
+WHERE status = 'accepted'
+GROUP BY business_date, region;
 ```
 
-## Data and change semantics
+[`full_rebuild`](src/totals.py) is the single implementation of that query. Repairs recompute from the Silver snapshot at the requested end version, then select the affected groups. The implementation reads the snapshot into pandas; the work set scopes the Gold write.
 
-Each Silver order has six fields:
+A Silver update produces an old row (`update_preimage`) and a new row (`update_postimage`) in the change data feed. The union of their date/region keys defines the work set. [`GoldTotals.replace_groups`](src/repository.py) replaces that scope in one Delta commit and records the input Silver version. A group with no remaining accepted orders is omitted from the replacement and disappears.
 
-| Field | Meaning |
+[`scenario.py`](src/scenario.py) constructs the adapters and runs the comparisons. Repair strategies and release logic depend on narrow protocols; [`repository.py`](src/repository.py) supplies the Delta implementation. Reporting and read-only inspection are separate modules.
+
+## Scenario walkthrough
+
+Silver starts with **eight accepted orders** and **five Gold groups**. Order **7**, worth **25**, moves from **3 November / West** to **4 November / East**. Its customer still has another order in the old group. Order **8**, the only order in **5 November / South**, is then cancelled.
+
+Each tuple below is **(amount, orders, distinct customers)**.
+
+| Approach | Observed result against Silver v2 |
 | --- | --- |
-| `order_id` | Integer order identifier. |
-| `business_date` | Business date, as an ISO `YYYY-MM-DD` string. Part of the Gold grain. |
-| `region` | Region name. Part of the Gold grain. |
-| `customer` | Customer code, used for the distinct-customer count. |
-| `amount` | Whole-number amount in one currency. |
-| `status` | `accepted` or `cancelled`. Gold counts accepted orders only. |
+| Recompute new groups, then upsert | The old West group stays at **(125, 3, 2)** instead of **(100, 2, 2)**. The cancelled South group remains. |
+| Recompute old and new groups, then upsert | West is corrected, but South remains at **90** because no replacement row exists to upsert. |
+| **Recompute old and new groups, then replace** | **Matches the full rebuild.** West becomes **(100, 2, 2)** and South disappears. |
+| Add and subtract changed-row contributions | West has **1** distinct customer instead of **2**; South remains as a row of zeros. |
 
-Gold is the query in [`full_rebuild`](src/totals.py): for accepted orders, `SUM(amount)`, `COUNT(*)`, and `COUNT(DISTINCT customer)` by `business_date` and `region`. Every repair that recomputes groups uses this same query, so it stays the one definition of a total.
+The next stages demonstrate two separate reporting concerns:
 
-Each Silver change is one `UPDATE` commit. The reader returns CDF rows ordered by commit, order, and change type, with pre-images before post-images. The **work set** is every group named by a pre-image or a post-image, so a cancelled order still adds the group it leaves.
+- **Stale releases:** order 3 is corrected, reducing West to **95**. Releasing a repair built from Silver v3, then retrying one built from v1, restores the obsolete **100** without the guard. With the guard, the retry is rejected and West stays **95**.
+- **Closed periods:** October was approved at **150** and later corrected to **145**. Ignoring the correction leaves the report at **370**. Keeping October approved and booking a **−5** November adjustment yields **365**, matching current Silver.
 
-[`GoldTotals.replace_groups`](src/repository.py) overwrites the rows matching the work set and writes the Silver version it read into the commit's metadata. A group the query no longer returns is not written back, which is how an empty group disappears. Whether an empty group should vanish or show zero is a reporting decision.
+The Gold variants intentionally remain at different stages:
 
-See [`data/README.md`](data/README.md) for the seed fields and timeline.
+| Reference | Purpose | Accepted amount |
+| --- | --- | ---: |
+| Silver v2 | Compare the four repair strategies after the move and cancellation | 375 |
+| Silver v3 | Compare guarded and unguarded release replay | 370 |
+| Silver v4 | Current truth after the late October correction | 365 |
 
-## Architecture and SOLID assessment
+The closed-period example computes approvals and adjustments in memory. It does not persist an adjustment ledger or update every Gold variant to v4.
 
-```mermaid
-flowchart LR
-    CLI[totals_demo.py<br/>reporting] --> Scenario[scenario.py<br/>wiring and orchestration]
-    Scenario --> Repairs[repairs.py<br/>four repair strategies]
-    Scenario --> Pipeline[pipeline.py<br/>releases, guard, adjustments]
-    Scenario --> Delta[repository.py<br/>Delta adapter]
-    Repairs --> Totals[totals.py<br/>Gold query and groups]
-    Pipeline --> Totals
-    Repairs --> Contracts[protocols.py]
-    Pipeline --> Contracts
-    Delta -. implements .-> Contracts
+## Reproduce the result images
+
+After running the demo, export the existing lake:
+
+```bash
+.venv/bin/python -m src.inspection --lake lake --output docs/results
 ```
 
-The code broadly follows SOLID at the scale of a teaching project, with specific gaps:
+Open `docs/results/index.html` in a browser. The exporter reads actual Delta snapshots and writes HTML and JSON outside the source lake. It does not run the scenario or modify its tables. Stop writers while exporting: table versions are captured individually, without a cross-table transaction.
 
-| Principle | Assessment |
+To capture the report as a PNG:
+
+```bash
+.venv/bin/python scripts/capture_snapshot.py
+```
+
+The screenshot helper uses a locally installed Chrome or Chromium with a temporary profile. Set `CHROME_BIN` if the browser cannot be discovered. A browser is required only for the PNG. Capture dimensions can be set with `--width` and `--height`.
+
+Refresh the committed evidence together:
+
+```bash
+mkdir -p docs/results
+./run_demo.sh > docs/results/demo-output.txt
+.venv/bin/python -m src.inspection --lake lake --output docs/results
+.venv/bin/python scripts/capture_snapshot.py
+```
+
+The inspector uses **Silver v2** and **v3** as the demo's reference versions. For a changed scenario, supply `--repair-version` and `--race-version` explicitly. If a historical snapshot is unavailable, its checks are marked **UNAVAILABLE**. Invalid current tables cause the export to fail.
+
+### Inspect the bronze-to-silver lake
+
+The related lake at `/Users/santosh/Documents/workspace/bronze-to-silver-repair/lake` was inspected separately. Its captured state contains **15 Bronze events**, **8 Silver orders**, and **7 Gold groups**.
+
+| Contract | This project | Bronze-to-silver project |
+| --- | --- | --- |
+| Silver columns | `order_id`, `business_date`, `region`, `customer`, `amount`, `status` | `order_id`, `order_date`, `status` |
+| Gold grain | Business date and region | Order date and status |
+| Measures | Amount, orders, distinct customers | Orders |
+
+The external lake can be viewed with the same read-only exporter:
+
+```bash
+.venv/bin/python -m src.inspection \
+  --lake /Users/santosh/Documents/workspace/bronze-to-silver-repair/lake \
+  --output docs/results/bronze-to-silver
+
+.venv/bin/python scripts/capture_snapshot.py \
+  --html docs/results/bronze-to-silver/index.html \
+  --output docs/results/bronze-to-silver/snapshot.png --height 960
+```
+
+![Actual Silver and Gold rows with Bronze inventory from the separate bronze-to-silver lake, with captured table versions](docs/results/bronze-to-silver/snapshot.png)
+
+*Separate source lake: [HTML inspection](docs/results/bronze-to-silver/index.html) · [complete table export](docs/results/bronze-to-silver/tables.json). The Silver-to-Gold amount and customer checks do not apply to this schema.*
+
+A direct pipeline connection would require an explicit shared schema and business rules for region, customer, amount, and status eligibility. This inspection performs no conversion. Use the exporter for this path; passing it to `scenario.run` would recreate the directory.
+
+### Read Delta tables correctly
+
+`lake/` is generated and ignored by Git. Each table contains a `_delta_log/` transaction history and Parquet data; Silver also contains change-feed files. Read through Delta so the log selects the live files:
+
+```python
+from deltalake import DeltaTable
+
+silver = DeltaTable("lake/silver_orders")
+print("Silver version:", silver.version())
+print(silver.to_pandas().sort_values("order_id").to_string(index=False))
+```
+
+Globbing all Parquet files can include obsolete rows. The small evidence files under `docs/results/` make results reviewable without committing the lake.
+
+## Code structure
+
+Calculations live in `totals.py`, repair strategies in `repairs.py`, and release handling in `pipeline.py`. Storage interfaces are defined in `protocols.py` and implemented by the Delta adapters in `repository.py`. The scenario connects these components; separate modules provide console reporting and table inspection.
+
+The comparison harness invokes each strategy through `GoldRepair`. Three strategies deliberately produce incorrect results; comparison with the full rebuild exposes those failures. [`test_storage_contracts.py`](tests/test_storage_contracts.py) checks the same storage behavior against memory and Delta adapters; [`test_article_claims.py`](tests/test_article_claims.py) checks the scenario outcomes.
+
+The adapters validate update fields and types, escape SQL string literals, reject duplicate Gold keys and replacement rows outside the declared scope, and preserve the Gold schema for empty results.
+
+## Development
+
+```bash
+make
+```
+
+Runs lint, formatting checks, type checks, tests, and the demo. The demo step recreates `lake/`.
+
+| Command | Purpose |
 | --- | --- |
-| **Single responsibility** | The Gold query, repair strategies, release logic, persistence, orchestration, and reporting are separated into focused modules. |
-| **Open/closed** | A new repair is a new class with `name` and `apply`; the comparison loop runs it against a full rebuild without changes. |
-| **Liskov substitution** | The four repairs share the `GoldRepair` contract and run in the same loop. Sharing the interface does not make them equivalent: three are counterexamples by design. There is no in-memory `OrderTable` or `TotalsTable` fake, so substitution of the storage adapters is not tested. |
-| **Interface segregation** | `OrderTable` only reads Silver, `GoldRepair` has one method. `TotalsTable` bundles upsert, group replacement, and the stale-release check, which not every repair needs. |
-| **Dependency inversion** | `repairs.py` and `pipeline.py` depend on protocols and never import `deltalake`. `scenario.py` also calls adapter-only methods directly (Silver updates and Gold table creation). The adapter imports the domain's `tidy` helper. |
+| `make setup` | Install runtime dependencies, pytest, Ruff, and mypy in `.venv`. |
+| `make test` | Run calculation, scenario, adapter contract, and inspection tests. |
+| `make lint` | Check lint and formatting with Ruff. |
+| `make types` | Type-check `src` with mypy. |
+| `make demo` | Recreate the demo lake and print results. |
+| `make report` | Export the existing lake to HTML and JSON. |
+| `make snapshot` | Export the existing lake and capture the report with Chrome/Chromium. |
+| `make clean` | Remove `.venv`, `lake/`, tool caches, and bytecode caches. |
 
-The current structure is useful for the example. Before broadening it, add in-memory fakes with shared adapter tests, split the stale-release check from the write interface, and build predicates from structured values instead of string formatting.
-
-## Repository layout
+All check and demo targets install dependencies first. After setup, tools can be run directly through `.venv/bin/python -m pytest`, `ruff`, or `mypy`.
 
 ```text
 .
-├── data/
-│   ├── orders.json          # Eight synthetic orders and the changes applied to them
-│   └── README.md            # Seed fields and timeline
+├── data/                       # Synthetic orders and change timeline
+├── docs/
+│   ├── architecture.svg        # Repair flow and code boundaries
+│   └── results/                # Report, JSON, transcript, and screenshots
+├── scripts/capture_snapshot.py # Reproducible browser capture
 ├── src/
-│   ├── models.py            # Gold grain, columns, OrderChange, Release, Adjustment
-│   ├── protocols.py         # OrderTable, TotalsTable, and GoldRepair interfaces
-│   ├── totals.py            # The Gold query, affected groups, and comparisons (pure pandas)
-│   ├── repairs.py           # Four repair strategies
-│   ├── pipeline.py          # Releases with the stale guard; closed-month adjustments
-│   ├── repository.py        # Silver orders and Gold totals as local Delta tables
-│   ├── scenario.py          # Example orchestration and structured results
-│   └── totals_demo.py       # Composition root and printed report
-├── tests/
-│   ├── conftest.py               # Temporary Delta scenario fixture
-│   ├── test_article_claims.py    # End-to-end checks of the example results
-│   └── test_totals.py            # Gold query, groups, and adjustments without storage
+│   ├── models.py               # Grain, columns, changes, releases, adjustments
+│   ├── protocols.py            # Storage capabilities and strategy contract
+│   ├── totals.py               # Gold query and comparison helpers
+│   ├── repairs.py              # Four repair strategies
+│   ├── pipeline.py             # Release guard and closed-month adjustments
+│   ├── repository.py           # Delta persistence adapters
+│   ├── scenario.py             # Composition and example orchestration
+│   ├── totals_demo.py          # Console report
+│   └── inspection.py           # Read-only HTML and JSON export
+├── tests/                      # Unit, scenario, contract, and inspection checks
 ├── Makefile
 ├── pyproject.toml
 ├── requirements.txt
@@ -159,14 +218,12 @@ The current structure is useful for the example. Before broadening it, add in-me
 
 ## Scope and limitations
 
-- **Local demonstration:** all reads are materialized in pandas. Eight synthetic orders illustrate correctness, not throughput or cost.
-- **The guard is not atomic:** `publish` reads the last released version and then writes, in two steps. Two writers can both pass the check. A real guard needs the check inside the commit, for example a conditional write or a single writer per Gold table.
-- **Sequential race:** the two releases are applied one after the other to replay the interleaving. No concurrency is exercised.
-- **String predicates:** group predicates and update values are formatted into SQL strings without escaping. They are safe only for the controlled values in this example.
-- **Joins are not covered:** the work set comes from the orders table's change feed. A reference-table change, such as a store moving region, can change many groups with no order row changing.
-- **Closed months in memory:** approved totals and adjustments are computed in the scenario, not stored. A real report needs the approved totals and the adjustment rows persisted and owned.
-- **Engine scope:** the change shapes come from local delta-rs writes. They do not establish how a Databricks materialized view, `REPLACE WHERE`, or `MERGE` behaves.
+- **Local correctness example:** pandas materializes all reads. Eight synthetic orders establish behavior, not production throughput or cost.
+- **Non-atomic release guard:** the version check and write are separate operations. Concurrent writers can both pass. Production publication needs atomic coordination or a single writer.
+- **Table-wide watermark:** the guard rejects older or equal versions. It assumes each newer release covers all outstanding changes; independently scoped releases need different coordination.
+- **Sequential replay:** the stale-release scenario replays releases in sequence; it does not execute concurrent jobs.
+- **Closed periods:** approvals and adjustments are calculated in memory. Production reporting needs a persisted, governed adjustment ledger.
+- **Reference changes:** the work set comes from orders CDF. Changes in joined reference tables require their own impact analysis.
+- **Engine boundary:** local delta-rs predicate overwrite and merge are executed. Databricks materialized views and Databricks SQL commands are outside this project.
 
-## Data and license
-
-All example data is synthetic. No `LICENSE` file is included, and the repository does not currently declare a reuse license.
+All example data is synthetic. See [data/README.md](data/README.md) for fields and the timeline. No `LICENSE` file or reuse license is currently declared.

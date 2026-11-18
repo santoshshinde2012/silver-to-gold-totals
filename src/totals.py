@@ -11,7 +11,7 @@ def full_rebuild(orders: pd.DataFrame) -> pd.DataFrame:
     """The reference answer: daily totals of accepted orders by business date and region."""
     accepted = orders[orders["status"] == "accepted"]
     if accepted.empty:
-        return pd.DataFrame(columns=GOLD_COLUMNS)
+        return tidy(pd.DataFrame(columns=GOLD_COLUMNS))
     out = accepted.groupby(GROUP, as_index=False).agg(
         net_amount=("amount", "sum"), order_count=("order_id", "count"), customers=("customer", "nunique")
     )
@@ -44,7 +44,7 @@ def old_and_new_groups(changes: pd.DataFrame) -> frozenset[tuple[str, str]]:
 def restrict(totals: pd.DataFrame, groups: frozenset[tuple[str, str]]) -> pd.DataFrame:
     """Keep only the rows of the given groups."""
     keep = [g in groups for g in zip(totals["business_date"], totals["region"], strict=True)]
-    return totals[keep].reset_index(drop=True)
+    return totals.loc[keep].reset_index(drop=True)
 
 
 def differences(
