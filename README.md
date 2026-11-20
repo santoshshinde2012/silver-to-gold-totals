@@ -227,3 +227,7 @@ All check and demo targets install dependencies first. After setup, tools can be
 - **Engine boundary:** local delta-rs predicate overwrite and merge are executed. Databricks materialized views and Databricks SQL commands are outside this project.
 
 All example data is synthetic. See [data/README.md](data/README.md) for fields and the timeline. No `LICENSE` file or reuse license is currently declared.
+
+## Support
+
+[![Buy Me a Coffee](https://img.shields.io/badge/buymeacoffee-black?style=for-the-badge&logo=buymeacoffee&logoColor=white)](https://buymeacoffee.com/santoshshin)
